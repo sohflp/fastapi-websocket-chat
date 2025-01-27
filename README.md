@@ -12,3 +12,21 @@ The following programming languages, technologies and frameworks were implemente
 - [tailwindcss](https://tailwindcss.com/)
 - [htmx](https://htmx.org/)
     - [htmx Web Socket extension](https://htmx.org/extensions/ws/)
+
+## Running
+
+```shell
+python3 -m venv venv
+
+source venv/bin/activate
+
+pip install -r requirements.txt
+
+fastapi run main.py
+
+# Exit virtual environment (venv)
+deactivate
+```
+
+Server started at http://0.0.0.0:8000
+Documentation at http://0.0.0.0:8000/docs
