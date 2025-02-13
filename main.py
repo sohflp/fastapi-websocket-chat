@@ -21,61 +21,73 @@ app = FastAPI()
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     return jinja.TemplateResponse(
-        request=request, name="base.html"
+        request=request,
+        name="base.html"
     )
 
 
 @app.post("/user", response_class=HTMLResponse)
 async def user(request: Request, username: str = Form(...)):
     return jinja.TemplateResponse(
-        request=request, name="chat.html", context={'username': username}
+        request=request,
+        name="chat.html",
+        context={'username': username}
     )
 
 
-@app.websocket("/ws/{client_id}")
-async def chat(websocket: WebSocket, client_id: str):
-    await manager.connect(websocket)
+@app.post("/message", response_class=HTMLResponse)
+async def message(
+    request: Request,
+    username: str = Form(...),
+    message: str = Form(...)
+):
+    # Send global message to other users via WS
+    global_message = TEMPLATES['global'].render({
+        'message': message,
+        'username': username,
+        'time': datetime.today().strftime("%I:%M %p")
+    })
+    await manager.send_global_message(username, f"<div id=\"history\" hx-swap-oob=\"beforeend\">{global_message}</div>")
+
+    # Return personal message via AJAX
+    return jinja.TemplateResponse(
+        request=request,
+        name="messages/user.html",
+        context={
+            'message': message,
+            'username': username,
+            'time': datetime.today().strftime("%I:%M %p")
+        }
+    )
+
+
+@app.websocket("/ws/{username}")
+async def chat(websocket: WebSocket, username: str):
+    await manager.connect(username, websocket)
 
     # Rendering Jinja template
     notification = TEMPLATES['notification'].render({
-        'username': client_id,
+        'username': username,
         'action': 'joined'
     })
 
     # Event: User connected
-    await manager.broadcast(f"<span id=\"active\">{manager.active_users()}</span>")
-    await manager.broadcast(f"<div id=\"history\" hx-swap-oob=\"beforeend\">{notification}</div>")
+    await manager.send_broadcast(f"<span id=\"active\">{manager.active_users()}</span>")
+    await manager.send_broadcast(f"<div id=\"history\" hx-swap-oob=\"beforeend\">{notification}</div>")
 
     try:
         while True:
-            data = await websocket.receive_json()
-
-            # Rendering Jinja template
-            personal_message = TEMPLATES['user'].render({
-                'message': data['message'],
-                'username': client_id,
-                'time': datetime.today().strftime("%I:%M %p")
-            })
-            global_message = TEMPLATES['global'].render({
-                'message': data['message'],
-                'username': client_id,
-                'time': datetime.today().strftime("%I:%M %p")
-            })
-
-            # Event: New message sent / received
-            await manager.broadcast(f"<span id=\"active\">{manager.active_users()}</span>")
-            await manager.send_personal_message(f"<div id=\"history\" hx-swap-oob=\"beforeend\">{personal_message}</div>", websocket)
-            await manager.send_global_message(f"<div id=\"history\" hx-swap-oob=\"beforeend\">{global_message}</div>", websocket)
+            await websocket.receive_json()  # No action required due to new "/message" route
 
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        manager.disconnect(username)
 
         # Rendering Jinja template
         notification = TEMPLATES['notification'].render({
-            'username': client_id,
+            'username': username,
             'action': 'left'
         })
 
         # Event: User disconnected
-        await manager.broadcast(f"<span id=\"active\">{manager.active_users()}</span>")
-        await manager.broadcast(f"<div id=\"history\" hx-swap-oob=\"beforeend\">{notification}</div>")
+        await manager.send_broadcast(f"<span id=\"active\">{manager.active_users()}</span>")
+        await manager.send_broadcast(f"<div id=\"history\" hx-swap-oob=\"beforeend\">{notification}</div>")
